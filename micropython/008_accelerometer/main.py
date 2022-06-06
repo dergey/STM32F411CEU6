@@ -1,12 +1,51 @@
+import math
+
 import pyb
 from machine import Pin, I2C
-import ssd1306
+
 import mpu6050
+import ssd1306
+
+PRECISION = 500
 
 i2c = I2C(sda=Pin('PB7'), scl=Pin('PB6'))
 oled = ssd1306.SSD1306_I2C(128, 32, i2c)
 display = 0
 mpu = mpu6050.accel(i2c)
+
+
+def draw_pointer(dir, x: int, y: int, frame_buffer):
+    if dir == "UP":
+        frame_buffer.line(x + 2, y, x + 2, y + 6, 1)
+        frame_buffer.pixel(x, y + 2, 1)
+        frame_buffer.pixel(x + 1, y + 1, 1)
+        frame_buffer.pixel(x + 4, y + 2, 1)
+        frame_buffer.pixel(x + 3, y + 1, 1)
+        return
+    if dir == "DOWN":
+        frame_buffer.line(x + 2, y, x + 2, y + 6, 1)
+        frame_buffer.pixel(x, y + 4, 1)
+        frame_buffer.pixel(x + 1, y + 5, 1)
+        frame_buffer.pixel(x + 3, y + 5, 1)
+        frame_buffer.pixel(x + 4, y + 4, 1)
+        return
+    if dir == "LEFT":
+        frame_buffer.line(x, y + 3, x + 6, y + 3, 1)
+        frame_buffer.pixel(x + 2, y + 1, 1)
+        frame_buffer.pixel(x + 1, y + 2, 1)
+        frame_buffer.pixel(x + 1, y + 4, 1)
+        frame_buffer.pixel(x + 2, y + 5, 1)
+        return
+    if dir == "RIGHT":
+        frame_buffer.line(x, y + 3, x + 6, y + 3, 1)
+        frame_buffer.pixel(x + 4, y + 1, 1)
+        frame_buffer.pixel(x + 5, y + 2, 1)
+        frame_buffer.pixel(x + 5, y + 4, 1)
+        frame_buffer.pixel(x + 4, y + 5, 1)
+        return
+    if dir == "NONE":
+        frame_buffer.pixel(x + 2, y + 3, 1)
+        return
 
 
 def average_ac(n):
@@ -23,10 +62,11 @@ def average_ac(n):
         list_acz.append(acz)
         pyb.delay(5)
     return {
-        "acx": sum(list_acx) / len(list_acx) / 100,
-        "acy": sum(list_acy) / len(list_acy) / 100,
-        "acz": sum(list_acz) / len(list_acz) / 100
+        "acx": sum(list_acx) / len(list_acx),
+        "acy": sum(list_acy) / len(list_acy),
+        "acz": sum(list_acz) / len(list_acz)
     }
+
 
 def average_gy(n):
     list_gyx = []
@@ -42,17 +82,18 @@ def average_gy(n):
         list_gyz.append(gyz)
         pyb.delay(5)
     return {
-        "gyx": sum(list_gyx) / len(list_gyx) / 100,
-        "gyy": sum(list_gyy) / len(list_gyy) / 100,
-        "gyz": sum(list_gyz) / len(list_gyz) / 100
+        "gyx": int(sum(list_gyx) / len(list_gyx) / PRECISION),
+        "gyy": int(sum(list_gyy) / len(list_gyy) / PRECISION),
+        "gyz": int(sum(list_gyz) / len(list_gyz) / PRECISION)
     }
 
-def switchDisplay():
+
+def switch_display():
     global display
     display = display + 1 if display < 2 else 0
 
 
-pyb.Switch().callback(lambda: switchDisplay())
+pyb.Switch().callback(lambda: switch_display())
 
 while True:
     oled.fill(0)
@@ -66,7 +107,24 @@ while True:
         continue
     if display == 1:
         values = average_gy(10)
-        oled.text("Gravity sensor:", 0, 0, 1)
+        if math.fabs(values["gyx"]) > math.fabs(values["gyy"]):
+            if values["gyx"] > 0:
+                direction = "UP"
+            elif values["gyx"] < 0:
+                direction = "DOWN"
+            else:
+                direction = "NONE"
+        elif math.fabs(values["gyx"]) < math.fabs(values["gyy"]):
+            if values["gyy"] > 0:
+                direction = "RIGHT"
+            elif values["gyy"] < 0:
+                direction = "LEFT"
+            else:
+                direction = "NONE"
+        else:
+            direction = "NONE"
+        draw_pointer(direction, 0, 0, oled.framebuf)
+        oled.text("Direction: " + direction, 8, 0, 1)
         oled.text("gyx = " + str(values["gyx"]), 0, 8, 1)
         oled.text("gyy = " + str(values["gyy"]), 0, 16, 1)
         oled.text("gyz = " + str(values["gyz"]), 0, 24, 1)
